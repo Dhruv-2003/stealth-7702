@@ -5,7 +5,7 @@ import {
   ERC6638RegisteryAddress,
 } from "@/constants/address";
 import { config } from "process";
-import { toHex, zeroHash } from "viem";
+import { parseAbiItem, toHex, zeroHash } from "viem";
 import { Config } from "wagmi";
 import { getPublicClient, getWalletClient } from "wagmi/actions";
 
@@ -43,7 +43,7 @@ export const registerKeys = async (
 
 type GetStealthMetaAddressOfParams = {
   schemeId: number;
-  stealthAddress: `0x${string}`;
+  receiverAddress: `0x${string}`;
 };
 
 export const getStealthMetaAddressOf = async (
@@ -56,7 +56,7 @@ export const getStealthMetaAddressOf = async (
     address: ERC6638RegisteryAddress,
     abi: erc6538RegistryAbi,
     functionName: "stealthMetaAddressOf",
-    args: [params.stealthAddress, BigInt(params.schemeId)],
+    args: [params.receiverAddress, BigInt(params.schemeId)],
   });
 
   if (!data || data === zeroHash) {

@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useRef } from "react";
 import {
   Tabs,
   TabList,
@@ -22,22 +22,17 @@ import {
   Button,
 } from "@chakra-ui/react";
 import { useState } from "react";
+
 import {
-  Annoucement,
-  getUserMetadatAddress,
-  scanAnnouncemets,
-  updateAnnouncement,
-  updateAnnouncementV2,
-} from "@/utils/rollupMethods";
-import { getStealthAddress, revealStealthKey } from "@/utils/stealthMethods";
-import {
-  erc20ABI,
-  useAccount,
-  useNetwork,
-  usePublicClient,
-  useWalletClient,
-} from "wagmi";
-import { createWalletClient, http, parseEther } from "viem";
+  getNewStealthAddress,
+  revealStealthKey,
+  StealthAddressData,
+} from "@/utils/stealthMethods";
+
+import { useAccount, useConfig, usePublicClient, useWalletClient } from "wagmi";
+
+import { createWalletClient, erc20Abi, http, parseEther } from "viem";
+
 import sha256 from "sha256";
 import { privateKeyToAccount } from "viem/accounts";
 import { RepeatIcon, CheckCircleIcon } from "@chakra-ui/icons";
@@ -52,37 +47,41 @@ import {
   useDisclosure,
 } from "@chakra-ui/react";
 import { useToast } from "@chakra-ui/react";
+import {
+  announceStealthAddress,
+  getStealthMetaAddressOf,
+} from "@/utils/contractMethods";
+import { Announcement, scanAnnouncements } from "@/utils";
 
 const Modal = () => {
-  const { address: account } = useAccount();
+  const { address: account, chain } = useAccount();
   const publicClient = usePublicClient();
   const { data: walletClient } = useWalletClient();
-  const { chain, chains } = useNetwork();
+  const config = useConfig();
 
   const { isOpen, onOpen, onClose } = useDisclosure();
-  const cancelRef = React.useRef();
+  const cancelRef = useRef();
 
   const [receiverAddress, setReceieverAddress] = useState<`0x${string}`>();
   const [stealthMetaAddress, setStealthMetaAddress] = useState<string>();
-  const [tokenAddress, setTokenAddress] = useState<`0x${string}`>("0xe");
+  const [stealthAddressData, setStealthAddressData] =
+    useState<StealthAddressData>();
 
+  const [tokenAddress, setTokenAddress] = useState<`0x${string}`>("0xe");
   const [amount, setAmount] = useState<string>();
+
   const [checkReceiverData, setCheckReceiverData] = useState<boolean>(false);
   const [checkTokenTransfer, setCheckTokenTransfer] = useState<boolean>(false);
+
   const [spendingKey, setSpendingKey] = useState<string>();
   const [viewingKey, setViewingKey] = useState<string>();
-  const [announcements, setAnnouncements] = useState<Annoucement[]>();
-  const [stealthAddressData, setStealthAddressData] = useState<{
-    schemeId: string;
-    stealthAddress: `0x${string}`;
-    ephemeralPublicKey: string;
-    viewTag: number;
-  }>();
-  const toast = useToast();
+
+  const [announcements, setAnnouncements] = useState<Announcement[]>();
   const [stealthKey, setStealthKey] = useState<`0x${string}`>();
+
+  const toast = useToast();
   const [page, setPage] = useState<number>(0);
   const [transactionHash, setTransactionHash] = useState<string>();
-  const [scanData, setScanData] = useState<Annoucement[]>();
   const [chooseStealthAddress, setChooseStealthAddress] = useState<string>();
   const [announced, setAnnounced] = useState<boolean>(false);
 
@@ -113,48 +112,54 @@ const Modal = () => {
     }
   };
 
+  // To get the stealth meta address for the user and then create a new stealth address
   const handleGetReceiverData = async () => {
     try {
       if (!receiverAddress) {
         console.log("No Receiver Address Found");
         return;
       }
-      const userMetadata = await getUserMetadatAddress(receiverAddress);
-      console.log(userMetadata);
-      if (!userMetadata) {
+      const stealthMetaAddress = await getStealthMetaAddressOf(config, {
+        receiverAddress: receiverAddress,
+        schemeId: 0,
+      });
+
+      console.log(stealthMetaAddress);
+
+      if (!stealthMetaAddress) {
         console.log("No Metadata address found");
         return;
       }
-      setStealthMetaAddress(userMetadata.stelathMetaAddress);
-      const stealthAddressData = await getStealthAddress(
-        userMetadata.stelathMetaAddress
-      );
+
+      setStealthMetaAddress(stealthMetaAddress);
+
+      const stealthAddressData = await getNewStealthAddress(stealthMetaAddress);
+
       if (!stealthAddressData) {
         console.log("No Stealth address found");
         return;
       }
+
       setStealthAddressData(stealthAddressData);
-      if (stealthAddressData) {
-        await setCheckReceiverData(true);
+      if (
+        stealthAddressData.stealthAddress &&
+        stealthAddressData.ephemeralPublicKey
+      ) {
+        setCheckReceiverData(true);
       }
     } catch (error) {
       console.log(error);
     }
   };
+  // ephemeralPublicKey: "0x02b4035d5b7f1b30a1d9dfc624325053fd816ef3109f9832bdc3600de9a42ca839";
+  // schemeId: 0;
+  // stealthAddress: "0x42ecdecca95dbf058a6ddb8da1fd3be03113efb7";
+  // viewTag: 171;
 
   const handleTokenTransfer = async () => {
     try {
-      if (!stealthAddressData) {
-        console.log("No Stealth address found");
-        return;
-      }
-      // transfer the funds to the stealth address
-      if (!walletClient) {
-        console.log("No Wallet Client Found");
-        return;
-      }
-      if (!amount) {
-        console.log("No Wallet Client Found");
+      if (!stealthAddressData || !amount || !walletClient || !publicClient) {
+        console.log("Invalid inputs");
         return;
       }
 
@@ -181,7 +186,7 @@ const Modal = () => {
         const data = await publicClient?.simulateContract({
           account,
           address: tokenAddress,
-          abi: erc20ABI,
+          abi: erc20Abi,
           functionName: "transfer",
           args: [stealthAddressData.stealthAddress, parseEther(amount)],
         });
@@ -224,8 +229,7 @@ const Modal = () => {
       }
       const signature = await walletClient.signMessage({
         account,
-        message:
-          "Sign this message to get access to your app-specific keys. Only Sign this Message while using this app",
+        message: `Sign this message to get access to your app-specific keys. \n \nOnly Sign this Message while using the trusted app`,
       });
       console.log(signature);
       const portion = signature.slice(2, 66);
@@ -251,13 +255,12 @@ const Modal = () => {
       }
 
       // update the Registery contract with the stealth address data
-      await updateAnnouncementV2(
-        stealthAddressData.stealthAddress,
-        // @ts-ignore
-        stealthAddressData.ephemeralPublicKey,
-        stealthAddressData.viewTag,
-        spendingKey
-      );
+      await announceStealthAddress(config, {
+        schemeId: 0,
+        stealthAddress: stealthAddressData.stealthAddress,
+        ephemeralPublicKey: stealthAddressData.ephemeralPublicKey,
+        viewTag: stealthAddressData.viewTag,
+      });
 
       handleStepper();
       setAnnounced(true);
@@ -281,9 +284,12 @@ const Modal = () => {
         console.log("Please sign and generate keys");
         return;
       }
-      const data = await scanAnnouncemets(spendingKey, viewingKey);
+      const data = await scanAnnouncements(config, {
+        spendingKey: spendingKey as `0x${string}`,
+        viewingKey: viewingKey as `0x${string}`,
+      });
+
       console.log(data);
-      setScanData(data);
       if (data) {
         setAnnouncements(data);
       }
@@ -325,31 +331,33 @@ const Modal = () => {
         console.log("No Stealth Key Found");
         return;
       }
-      //@ts-ignore
-      console.log(stealthKey);
-      const account = privateKeyToAccount(stealthKey);
 
+      if (!publicClient || !chain) {
+        console.log("No Public Client Found");
+        return;
+      }
+
+      const account = privateKeyToAccount(stealthKey);
       const walletClient = createWalletClient({
         account,
         chain: chain,
         transport: http(),
       });
 
-      // withdraw the funds from the stealth address
-      // you have stelathPrivate Key
-
       if (!amount) {
         console.log("No Wallet Client Found");
         return;
       }
+
       const hash = await walletClient.sendTransaction({
         account: account,
-        //@ts-ignore
         to: receiverAddress,
         value: parseEther(amount),
       });
+
       console.log(hash);
       setTransactionHash(hash);
+
       console.log("Transaction Sent");
       const transaction = await publicClient.waitForTransactionReceipt({
         hash: hash,
@@ -693,8 +701,8 @@ const Modal = () => {
                     />
                   </div>
                   <div className="mt-7 flex flex-col">
-                    {scanData &&
-                      scanData.map((data) => {
+                    {announcements &&
+                      announcements.map((data) => {
                         return (
                           <ul key={data.stealthAddress}>
                             <li
@@ -705,9 +713,9 @@ const Modal = () => {
                               onClick={() => {
                                 setChooseStealthAddress(data.stealthAddress);
                                 setStealthAddressData({
-                                  schemeId: "",
+                                  schemeId: 0,
                                   stealthAddress: data.stealthAddress,
-                                  ephemeralPublicKey: data.ephemeralPublicKey,
+                                  ephemeralPublicKey: data.ephemeralPubKey,
                                   viewTag: data.viewTag,
                                 });
                               }}
@@ -747,6 +755,7 @@ const Modal = () => {
                       Reveal
                     </button>
                     <AlertDialog
+                      // @ts-ignore
                       leastDestructiveRef={cancelRef}
                       isOpen={isOpen}
                       onClose={onClose}
@@ -759,6 +768,7 @@ const Modal = () => {
 
                           <AlertDialogBody>{stealthKey}</AlertDialogBody>
                           <AlertDialogFooter>
+                            {/* @ts-ignore */}
                             <Button ref={cancelRef} onClick={onClose}>
                               Close
                             </Button>

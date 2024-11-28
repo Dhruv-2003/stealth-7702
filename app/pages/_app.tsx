@@ -1,63 +1,32 @@
 import "@/styles/globals.css";
 import type { AppProps } from "next/app";
 import "@rainbow-me/rainbowkit/styles.css";
-import { getDefaultWallets, RainbowKitProvider } from "@rainbow-me/rainbowkit";
-import { configureChains, createConfig, WagmiConfig } from "wagmi";
-import {
-  polygonMumbai,
-  polygonZkEvmTestnet,
-  arbitrumSepolia,
-  arbitrumGoerli,
-  scrollSepolia,
-  scrollTestnet,
-  mantleTestnet,
-  celoAlfajores,
-  baseGoerli,
-  baseSepolia,
-  xdcTestnet,
-  lineaTestnet,
-} from "wagmi/chains";
-import { publicProvider } from "wagmi/providers/public";
+import { getDefaultConfig, RainbowKitProvider } from "@rainbow-me/rainbowkit";
+import { WagmiProvider } from "wagmi";
+import { odysseyTestnet } from "wagmi/chains";
+
 import { ChakraProvider } from "@chakra-ui/react";
+import { QueryClientProvider, QueryClient } from "@tanstack/react-query";
 
-const { chains, publicClient } = configureChains(
-  [
-    polygonMumbai,
-    polygonZkEvmTestnet,
-    arbitrumSepolia,
-    arbitrumGoerli,
-    scrollSepolia,
-    scrollTestnet,
-    mantleTestnet,
-    celoAlfajores,
-    baseGoerli,
-    baseSepolia,
-    xdcTestnet,
-    lineaTestnet,
-  ],
-  [publicProvider()]
-);
-
-const { connectors } = getDefaultWallets({
+const config = getDefaultConfig({
   appName: "My RainbowKit App",
   projectId: "YOUR_PROJECT_ID",
-  chains,
+  chains: [odysseyTestnet],
+  ssr: true, // If your dApp uses server side rendering (SSR)
 });
 
-const wagmiConfig = createConfig({
-  autoConnect: true,
-  connectors,
-  publicClient,
-});
+const queryClient = new QueryClient();
 
 export default function App({ Component, pageProps }: AppProps) {
   return (
     <ChakraProvider>
-      <WagmiConfig config={wagmiConfig}>
-        <RainbowKitProvider chains={chains}>
-          <Component {...pageProps} />
-        </RainbowKitProvider>
-      </WagmiConfig>
+      <WagmiProvider config={config}>
+        <QueryClientProvider client={queryClient}>
+          <RainbowKitProvider>
+            <Component {...pageProps} />
+          </RainbowKitProvider>
+        </QueryClientProvider>
+      </WagmiProvider>
     </ChakraProvider>
   );
 }

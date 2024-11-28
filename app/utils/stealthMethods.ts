@@ -5,7 +5,7 @@ import init, {
   reveal_stealth_key,
 } from "../pkg/stealth_lib.js";
 
-const getStealthMetaAddress = async (
+export const getStealthMetaAddress = async (
   spendingKey: string,
   viewingKey: string
 ): Promise<string | undefined> => {
@@ -22,35 +22,37 @@ const getStealthMetaAddress = async (
   }
 };
 
-const getStealthAddress = async (
+export type StealthAddressData = {
+  schemeId: number;
+  stealthAddress: `0x${string}`;
+  ephemeralPublicKey: `0x${string}`;
+  viewTag: number;
+};
+
+export const getNewStealthAddress = async (
   metaAddress: string
-): Promise<
-  | {
-      schemeId: string;
-      stealthAddress: `0x${string}`;
-      ephemeralPublicKey: string;
-      viewTag: number;
-    }
-  | undefined
-> => {
+): Promise<StealthAddressData | undefined> => {
   try {
     await init();
 
-    const output = new_stealth_address(metaAddress) as {
-      schemeId: string;
-      stealthAddress: `0x${string}`;
-      ephemeralPublicKey: string;
-      viewTag: number;
+    const output = new_stealth_address(metaAddress);
+    console.log(output);
+
+    const data: StealthAddressData = {
+      schemeId: output.scheme_id,
+      stealthAddress: output.address,
+      ephemeralPublicKey: output.ephemeral_pubkey,
+      viewTag: output.view_tag,
     };
 
-    console.log(output);
-    return output;
+    console.log(data);
+    return data;
   } catch (error) {
     console.log(error);
   }
 };
 
-const revealStealthKey = async (
+export const revealStealthKey = async (
   spendingKey: string,
   viewingKey: string,
   stealthAddress: string,
@@ -70,7 +72,7 @@ const revealStealthKey = async (
   }
 };
 
-const checkStealth = async (
+export const checkStealth = async (
   spendingKey: string,
   viewingKey: string,
   stealthAddress: string,
@@ -90,11 +92,4 @@ const checkStealth = async (
   } catch (error) {
     console.log(error);
   }
-};
-
-export {
-  getStealthMetaAddress,
-  getStealthAddress,
-  revealStealthKey,
-  checkStealth,
 };

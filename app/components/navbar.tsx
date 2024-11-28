@@ -1,7 +1,7 @@
 import React from "react";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { useState } from "react";
-import { useAccount, usePublicClient, useWalletClient } from "wagmi";
+import { useAccount, useConfig, usePublicClient, useWalletClient } from "wagmi";
 import sha256 from "sha256";
 import { privateKeyToAccount } from "viem/accounts";
 import {
@@ -15,21 +15,20 @@ import {
   useDisclosure,
   Button,
 } from "@chakra-ui/react";
-import {
-  updateAnnouncement,
-  updateRegister,
-  updateRegisterV2,
-} from "@/utils/rollupMethods";
+
 import { getStealthMetaAddress } from "@/utils/stealthMethods";
+import { registerKeys } from "@/utils/contractMethods";
 
 const Navbar = () => {
   const { address: account } = useAccount();
-  const publicClient = usePublicClient();
   const { data: walletClient } = useWalletClient();
+  const config = useConfig();
+
   const [spendingKey, setSpendingKey] = useState<string>();
   const [viewingKey, setViewingKey] = useState<string>();
   const [userAddress, setUserAddress] = useState<string>();
-  const [stealthMetaAddress, setStealthMetaAddress] = useState<string>();
+  const [stealthMetaAddress, setStealthMetaAddress] = useState<`0x${string}`>();
+
   const { isOpen, onOpen, onClose } = useDisclosure();
 
   const signAndGenerateKey = async () => {
@@ -39,8 +38,7 @@ const Navbar = () => {
       }
       const signature = await walletClient.signMessage({
         account,
-        message:
-          "Sign this message to get access to your app-specific keys. Only Sign this Message while using this app",
+        message: `Sign this message to get access to your app-specific keys. \n \nOnly Sign this Message while using the trusted app`,
       });
       console.log(signature);
       const portion = signature.slice(2, 66);
@@ -70,7 +68,7 @@ const Navbar = () => {
       const metaAddress = await getStealthMetaAddress(spendingKey, viewingKey);
       console.log(metaAddress);
       if (metaAddress) {
-        setStealthMetaAddress(metaAddress.slice(0, -1));
+        setStealthMetaAddress(metaAddress as `0x${string}`);
       }
     } catch (error) {
       console.log(error);
@@ -83,8 +81,11 @@ const Navbar = () => {
         console.log("Please sign and generate keys , or get meta address");
         return;
       }
-      //@ts-ignore
-      await updateRegisterV2(userAddress, stealthMetaAddress, 0, spendingKey);
+
+      await registerKeys(config, {
+        schemeId: 0,
+        stealthMetaAddress: stealthMetaAddress,
+      });
       onClose();
     } catch (error) {
       console.log(error);
