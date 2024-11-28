@@ -18,6 +18,7 @@
     "@types/sha256": "^0.2.2",
     "axios": "^1.6.2",
     "child_process": "^1.0.2",
+    "dotenv": "^16.4.5",
     "ethers": "^6.9.0",
     "framer-motion": "^10.16.16",
     "next": "14.0.4",

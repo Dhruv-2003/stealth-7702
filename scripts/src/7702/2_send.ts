@@ -20,6 +20,11 @@ if (!ownerPrivateKey) {
 }
 const account = privateKeyToAccount(ownerPrivateKey);
 
+const PIMLICO_API_KEY = process.env.PIMLICO_API_KEY;
+if (!PIMLICO_API_KEY) {
+  throw new Error("PIMLICO_API_KEY is required");
+}
+
 const kernelSmartEOA = await toEcdsaKernelSmartAccount({
   client: client,
   owners: [account],
@@ -28,7 +33,7 @@ const kernelSmartEOA = await toEcdsaKernelSmartAccount({
 
 const paymasterClient = createPimlicoClient({
   transport: http(
-    "https://api.pimlico.io/v2/911867/rpc?apikey=pim_S72izExnBrN7dZ5ZuzgVYh"
+    `https://api.pimlico.io/v2/911867/rpc?apikey=${PIMLICO_API_KEY}`
   ),
   entryPoint: {
     address: entryPoint07Address,
@@ -41,7 +46,7 @@ const smartAccountClient = createSmartAccountClient({
   chain: odysseyTestnet,
   paymaster: paymasterClient,
   bundlerTransport: http(
-    "https://api.pimlico.io/v2/911867/rpc?apikey=pim_S72izExnBrN7dZ5ZuzgVYh"
+    `https://api.pimlico.io/v2/911867/rpc?apikey=${PIMLICO_API_KEY}`
   ),
   userOperation: {
     estimateFeesPerGas: async () =>
