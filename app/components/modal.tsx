@@ -58,7 +58,7 @@ const Modal = () => {
   const publicClient = usePublicClient();
   const { data: walletClient } = useWalletClient();
   const { chain, chains } = useNetwork();
-  // console.log(chain?.blockExplorers);
+
   const { isOpen, onOpen, onClose } = useDisclosure();
   const cancelRef = React.useRef();
 
