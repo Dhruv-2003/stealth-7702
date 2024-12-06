@@ -4,6 +4,8 @@ This repository is a **demo application** showcasing the use of **stealth addres
 
 NOTE: Only live on Odyssey network. Can obtain test funds from [here](https://odyssey-fba0638ec5f46615.testnets.rollbridge.app/)
 
+**[Live Demo](https://youtu.be/YGspcdghsqo)**
+
 ---
 
 ## **About the Experiment**
