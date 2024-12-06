@@ -20,9 +20,11 @@ import {
   Stepper,
   useSteps,
   Button,
+  RadioGroup,
+  Radio,
+  HStack,
 } from "@chakra-ui/react";
 import { useState } from "react";
-
 import {
   getNewStealthAddress,
   revealStealthKey,
@@ -31,7 +33,16 @@ import {
 
 import { useAccount, useConfig, usePublicClient, useWalletClient } from "wagmi";
 
-import { createWalletClient, erc20Abi, http, parseEther } from "viem";
+import {
+  createWalletClient,
+  encodeFunctionData,
+  erc20Abi,
+  erc721Abi,
+  http,
+  parseEther,
+  parseUnits,
+  zeroHash,
+} from "viem";
 
 import sha256 from "sha256";
 import { privateKeyToAccount } from "viem/accounts";
@@ -52,6 +63,19 @@ import {
   getStealthMetaAddressOf,
 } from "@/utils/contractMethods";
 import { Announcement, scanAnnouncements } from "@/utils";
+import {
+  authorizeSmartAccountUpgrade,
+  performSponsoredTransaction,
+} from "@/utils/7702Methods";
+import dotenv from "dotenv";
+import { prepareTransaction } from "@/utils/transferMethods";
+
+dotenv.config();
+
+const SPONSOR_PRIVATE_KEY = process.env.NEXT_PUBLIC_SPONSOR_PRIVATE_KEY;
+if (!SPONSOR_PRIVATE_KEY) {
+  throw new Error("SPONSOR_PRIVATE_KEY is required");
+}
 
 const Modal = () => {
   const { address: account, chain } = useAccount();
@@ -69,6 +93,7 @@ const Modal = () => {
 
   const [tokenAddress, setTokenAddress] = useState<`0x${string}`>("0xe");
   const [amount, setAmount] = useState<string>();
+  const [calldata, setCalldata] = useState<`0x${string}`>();
 
   const [checkReceiverData, setCheckReceiverData] = useState<boolean>(false);
   const [checkTokenTransfer, setCheckTokenTransfer] = useState<boolean>(false);
@@ -84,6 +109,9 @@ const Modal = () => {
   const [transactionHash, setTransactionHash] = useState<string>();
   const [chooseStealthAddress, setChooseStealthAddress] = useState<string>();
   const [announced, setAnnounced] = useState<boolean>(false);
+  const [stealthCode, setStealthCode] = useState<`0x${string}` | null>(null);
+
+  const [txType, setTxType] = useState<string>("1");
 
   const { selectedIndex, setSelectedIndex } = useTabs({});
 
@@ -117,141 +145,82 @@ const Modal = () => {
     try {
       if (!receiverAddress) {
         console.log("No Receiver Address Found");
-        return;
+        throw new Error("Receiver Address not found");
       }
+
       const stealthMetaAddress = await getStealthMetaAddressOf(config, {
         receiverAddress: receiverAddress,
         schemeId: 0,
       });
-
-      console.log(stealthMetaAddress);
+      console.log("Stealth meta address", stealthMetaAddress);
 
       if (!stealthMetaAddress) {
         console.log("No Metadata address found");
-        return;
+        throw new Error("Recepient not registered");
       }
-
       setStealthMetaAddress(stealthMetaAddress);
 
       const stealthAddressData = await getNewStealthAddress(stealthMetaAddress);
-
-      if (!stealthAddressData) {
-        console.log("No Stealth address found");
-        return;
-      }
-
       setStealthAddressData(stealthAddressData);
       if (
-        stealthAddressData.stealthAddress &&
-        stealthAddressData.ephemeralPublicKey
+        stealthAddressData?.stealthAddress &&
+        stealthAddressData?.ephemeralPublicKey
       ) {
         setCheckReceiverData(true);
-      }
-    } catch (error) {
-      console.log(error);
-    }
-  };
-  // ephemeralPublicKey: "0x02b4035d5b7f1b30a1d9dfc624325053fd816ef3109f9832bdc3600de9a42ca839";
-  // schemeId: 0;
-  // stealthAddress: "0x42ecdecca95dbf058a6ddb8da1fd3be03113efb7";
-  // viewTag: 171;
-
-  const handleTokenTransfer = async () => {
-    try {
-      if (!stealthAddressData || !amount || !walletClient || !publicClient) {
-        console.log("Invalid inputs");
-        return;
-      }
-
-      if (tokenAddress == "0xe") {
-        try {
-          const hash = await walletClient.sendTransaction({
-            account: account,
-            //@ts-ignore
-            to: stealthAddressData.stealthAddress,
-            value: parseEther(amount),
-          });
-          console.log(hash);
-          console.log("Transaction Sent");
-          setTransactionHash(hash);
-          const transaction = await publicClient.waitForTransactionReceipt({
-            hash: hash,
-          });
-          console.log(transaction);
-        } catch (error) {
-          console.log(error);
-        }
-      } else if (tokenAddress != "0xe" && tokenAddress) {
-        // perform token Transfer
-        const data = await publicClient?.simulateContract({
-          account,
-          address: tokenAddress,
-          abi: erc20Abi,
-          functionName: "transfer",
-          args: [stealthAddressData.stealthAddress, parseEther(amount)],
-        });
-        console.log(data);
-        if (!walletClient) {
-          console.log("Wallet client not found");
-          return;
-        }
-        // @ts-ignore
-        const hash = await walletClient.writeContract(data.request);
-        setTransactionHash(hash);
-        console.log("Transaction Sent");
-        const transaction = await publicClient.waitForTransactionReceipt({
-          hash: hash,
-        });
-        console.log(transaction);
-
-        toast({
-          title: "Transction completed",
-          description: "Transcation has been successfully completed",
-          status: "success",
-          duration: 9000,
-          isClosable: true,
-        });
       } else {
-        console.log("No Token Address Found");
-        return;
+        throw new Error("Stealth Address not found");
       }
-      // await handleStepper();
-      setCheckTokenTransfer(true);
     } catch (error) {
       console.log(error);
+      toast({
+        title: "Error",
+        // @ts-ignore
+        description: `There was an error generating stealth address for the user ${error.message}`,
+        status: "error",
+        duration: 5000,
+        isClosable: true,
+      });
     }
   };
 
+  // Sign & generate app specific keys for the user
   const signAndGenerateKey = async () => {
     try {
       if (!walletClient) {
         return;
       }
+
       const signature = await walletClient.signMessage({
         account,
         message: `Sign this message to get access to your app-specific keys. \n \nOnly Sign this Message while using the trusted app`,
       });
-      console.log(signature);
       const portion = signature.slice(2, 66);
 
       const privateKey = sha256(`0x${portion}`);
-      console.log(`0x${privateKey}`);
 
       const newAccount = privateKeyToAccount(`0x${privateKey}`);
-      console.log(newAccount);
 
       setSpendingKey(`0x${privateKey}`);
       setViewingKey(`0x${privateKey}`);
     } catch (error) {
       console.log(error);
+      toast({
+        title: "Error",
+        // @ts-ignore
+        description: `An error occured while generating keys ${error.message}`,
+        status: "error",
+        duration: 5000,
+        isClosable: true,
+      });
     }
   };
 
+  // Handle the announcement of the stealth address
   const handleAnnounce = async () => {
     try {
       if (!stealthAddressData) {
         console.log("No Stealth address found");
-        return;
+        throw new Error("Stealth Address not found");
       }
 
       // update the Registery contract with the stealth address data
@@ -262,38 +231,59 @@ const Modal = () => {
         viewTag: stealthAddressData.viewTag,
       });
 
-      handleStepper();
       setAnnounced(true);
-
-      toast({
-        title: "Announcement completed",
-        description: "Announcement has been successfully completed",
-        status: "success",
-        duration: 9000,
-        isClosable: true,
-      });
+      handleStepper();
     } catch (error) {
       console.log(error);
+      toast({
+        title: "Error",
+        // @ts-ignore
+        description: `An error occured while announcing stealth address ${error.message}`,
+        status: "error",
+        duration: 5000,
+        isClosable: true,
+      });
     }
   };
 
-  // scan for the user's ephemeral public key set
+  // Scan for the user's ephemeral public key set
   const handleScan = async () => {
     try {
       if (!spendingKey || !viewingKey) {
         console.log("Please sign and generate keys");
-        return;
+        throw new Error("Keys not found");
       }
+      toast({
+        title: "Scanning for Announcements",
+        description: "Scanning for announcements for the user",
+        status: "loading",
+        isClosable: true,
+      });
       const data = await scanAnnouncements(config, {
         spendingKey: spendingKey as `0x${string}`,
         viewingKey: viewingKey as `0x${string}`,
       });
-
-      console.log(data);
-      if (data) {
+      toast.closeAll();
+      if (data.length > 0) {
         setAnnouncements(data);
+        toast({
+          title: "Announcements Found",
+          description: "Announcements found for the user",
+          status: "success",
+          duration: 5000,
+          isClosable: true,
+        });
+      } else if (data.length == 0) {
+        toast({
+          title: "No Announcements Found",
+          description: "No announcements found for the user",
+          status: "info",
+          duration: 5000,
+          isClosable: true,
+        });
       }
     } catch (error) {
+      toast.closeAll();
       console.log(error);
     }
   };
@@ -302,11 +292,11 @@ const Modal = () => {
     try {
       if (!spendingKey || !viewingKey) {
         console.log("Please sign and generate keys");
-        return;
+        throw new Error("Keys not found");
       }
       if (!stealthAddressData) {
         console.log("No Stealth address found");
-        return;
+        throw new Error("Stealth Address not found");
       }
       const data = await revealStealthKey(
         spendingKey,
@@ -319,17 +309,144 @@ const Modal = () => {
         const formatted = data.slice(0, 66);
         // @ts-ignore
         setStealthKey(formatted);
+        return formatted;
       }
     } catch (error) {
       console.log(error);
+      toast({
+        title: "Error",
+        // @ts-ignore
+        description: `An error occured while revealing stealth key ${error.message}`,
+        status: "error",
+        duration: 5000,
+        isClosable: true,
+      });
     }
   };
 
-  const handleWithdraw = async () => {
+  const checkStealthAddress = async (stealthAddress: `0x${string}`) => {
+    if (!stealthAddress) {
+      console.log("No Stealth Address Found");
+      return;
+    }
+
+    if (!publicClient) {
+      console.log("No Public Client Found");
+      return;
+    }
+
+    const code = await publicClient.getCode({
+      address: stealthAddress,
+    });
+
+    console.log(code);
+    if (code) {
+      setStealthCode(code);
+      toast({
+        title: "Code found at stealth address",
+        description: "Code found at the stealth address. No need to upgrade",
+        status: "success",
+        duration: 2000,
+        isClosable: true,
+      });
+    }
+  };
+
+  const handleAuthorizeUpgrade = async () => {
+    try {
+      const stealthKey = await handleRevealStealthKey();
+      if (!stealthKey) {
+        console.log("No Stealth Key Found");
+        throw new Error("Stealth Key not found");
+      }
+
+      const txHash = await authorizeSmartAccountUpgrade(
+        config,
+        stealthKey as `0x${string}`,
+        SPONSOR_PRIVATE_KEY as `0x${string}`
+      );
+
+      console.log(`Authorize Upgrade Transaction Hash: ${txHash}`);
+
+      setTransactionHash(txHash);
+      const txReciept = await publicClient?.waitForTransactionReceipt({
+        hash: txHash,
+      });
+
+      console.log(txReciept);
+      if (stealthAddressData) {
+        checkStealthAddress(stealthAddressData?.stealthAddress);
+      }
+    } catch (error) {
+      console.log(error);
+      toast({
+        title: "Error",
+        // @ts-ignore
+        description: `An error occured while authorizing upgrade`,
+        status: "error",
+        duration: 5000,
+        isClosable: true,
+      });
+    }
+  };
+
+  // Token Transfer from sender to stealth address
+  const handleTransfer = async () => {
+    try {
+      if (!stealthAddressData || !amount || !walletClient || !publicClient) {
+        console.log("Invalid inputs");
+        throw new Error("Invalid Inputs");
+      }
+
+      const tx = await prepareTransaction({
+        publicClient: publicClient,
+        tokenAddress: tokenAddress,
+        fromAddress: walletClient.account.address,
+        receiverAddress: stealthAddressData.stealthAddress,
+        amount: amount,
+        txType: txType,
+        calldata: calldata,
+      });
+
+      if (!tx) {
+        console.log("No transaction found");
+        throw new Error("No transaction found");
+      }
+
+      const txHash = await walletClient.sendTransaction({
+        to: tx.to,
+        value: tx.value,
+        data: tx.data,
+      });
+
+      if (txHash) {
+        setCheckTokenTransfer(true);
+        setTransactionHash(txHash);
+      }
+
+      const transaction = await publicClient?.waitForTransactionReceipt({
+        hash: txHash,
+      });
+
+      console.log(transaction);
+    } catch (error) {
+      console.log(error);
+      toast({
+        title: "Error",
+        // @ts-ignore
+        description: `An error occured while transferring the funds`,
+        status: "error",
+        duration: 5000,
+        isClosable: true,
+      });
+    }
+  };
+
+  const handleSponsoredTransaction = async () => {
     try {
       if (!stealthKey) {
         console.log("No Stealth Key Found");
-        return;
+        throw new Error("Stealth Key not found");
       }
 
       if (!publicClient || !chain) {
@@ -338,33 +455,45 @@ const Modal = () => {
       }
 
       const account = privateKeyToAccount(stealthKey);
-      const walletClient = createWalletClient({
-        account,
-        chain: chain,
-        transport: http(),
-      });
 
-      if (!amount) {
-        console.log("No Wallet Client Found");
-        return;
+      if (!receiverAddress || !amount || !tokenAddress) {
+        throw new Error("Invalid Inputs");
       }
 
-      const hash = await walletClient.sendTransaction({
-        account: account,
-        to: receiverAddress,
-        value: parseEther(amount),
+      const tx = await prepareTransaction({
+        publicClient: publicClient,
+        tokenAddress: tokenAddress,
+        fromAddress: account.address,
+        receiverAddress: receiverAddress,
+        amount: amount,
+        txType: txType,
+        calldata: calldata,
       });
 
-      console.log(hash);
-      setTransactionHash(hash);
+      if (!tx) {
+        console.log("No transaction found");
+        throw new Error("No transaction found");
+      }
 
-      console.log("Transaction Sent");
-      const transaction = await publicClient.waitForTransactionReceipt({
-        hash: hash,
+      const txHash = await performSponsoredTransaction(config, stealthKey, tx);
+      console.log(`Transaction Hash: ${txHash}`);
+
+      setTransactionHash(txHash);
+
+      const txReciept = await publicClient?.waitForTransactionReceipt({
+        hash: txHash,
       });
-      console.log(transaction);
+      console.log(txReciept);
     } catch (error) {
       console.log(error);
+      toast({
+        title: "Error",
+        // @ts-ignore
+        description: `An error occured while processing the tx`,
+        status: "error",
+        duration: 5000,
+        isClosable: true,
+      });
     }
   };
 
@@ -373,14 +502,15 @@ const Modal = () => {
       <div className="flex flex-col mx-auto justify-between w-full">
         <div className="mt-20 flex mx-auto justify-center">
           <Tabs index={selectedIndex} variant="soft-rounded" colorScheme="blue">
-            <div className="flex mx-auto px-2 w-[300px] py-1 bg-white rounded-xl">
+            <div className="flex mx-auto px-2 w-[380px] py-1 bg-white rounded-xl">
               <TabList>
                 <Tab onClick={() => setSelectedIndex(0)}>Transfer</Tab>
-                <Tab onClick={() => setSelectedIndex(1)}>Withdraw</Tab>
+                <Tab onClick={() => setSelectedIndex(1)}>
+                  Transact / Account
+                </Tab>
                 <Tab
                   onClick={() => {
                     setSelectedIndex(2);
-                    handleScan();
                   }}
                 >
                   Scan
@@ -432,7 +562,21 @@ const Modal = () => {
                           </div>
                           <div className="mt-7 mx-auto">
                             <button
-                              onClick={() => handleGetReceiverData()}
+                              onClick={() => {
+                                toast.promise(handleGetReceiverData(), {
+                                  success: {
+                                    title: "Stealth Address Generated",
+                                    description:
+                                      "Stealth Address has been successfully generated",
+                                  },
+                                  loading: {
+                                    title: "Generating Stealth Address",
+                                    description:
+                                      "Stealth Address is being generated",
+                                  },
+                                  error: {},
+                                });
+                              }}
                               className="px-6 mx-auto flex justify-center py-2 bg-blue-500 text-white text-xl rounded-xl font-semibold border hover:scale-105 hover:bg-white hover:border-blue-500 hover:text-blue-500 duration-200"
                             >
                               Generate Stealth for Receiver
@@ -511,39 +655,77 @@ const Modal = () => {
                         <div className="flex flex-col">
                           <div className="mt-4 flex flex-col">
                             <p className="text-md text-gray-600">
-                              Sending Funds from
+                              Sending Assets to
                             </p>
                             <p className="text-lg mt-1 text-gray-600">
-                              {chooseStealthAddress}
+                              {stealthAddressData?.stealthAddress}
                             </p>
                           </div>
+
                           <div className="mt-5 flex flex-col">
-                            <p className="text-md text-gray-600">amount</p>
+                            <p className="text-md text-gray-600">
+                              Transaction Type
+                            </p>
+                            <RadioGroup
+                              value={txType}
+                              onChange={(e) => setTxType(e)}
+                              className="bg-white h-12 mt-1 rounded-xl px-1 py-0.5 text-md text-blue-500 font-semibold"
+                            >
+                              <HStack gap={6}>
+                                <Radio value="1"> ETH</Radio>
+                                <Radio value="2">Token</Radio>
+                                <Radio value="3"> NFT</Radio>
+                              </HStack>
+                            </RadioGroup>
+                          </div>
+
+                          <div className="mt-5 flex flex-col">
+                            <p className="text-md text-gray-600">
+                              Amount / TokenId
+                            </p>
                             <div className="flex w-full items-center">
                               <input
                                 className="px-4 mt-2 py-3 border border-gray-100 rounded-xl text-2xl w-3/4"
                                 placeholder="0"
                                 onChange={(e) => setAmount(e.target.value)}
                               ></input>
-                              <select
-                                onChange={(e) =>
-                                  // @ts-ignore
-                                  setTokenAddress(e.target.value)
-                                }
-                                className="mx-2 bg-white border border-blue-500 h-12 mt-1 rounded-xl px-1 py-0.5 text-md text-blue-500 font-semibold w-1/3"
-                              >
-                                <option value="0xe">{chain?.name}</option>
-                                {chain?.id == 80001 && (
-                                  <option value="0x326C977E6efc84E512bB9C30f76E30c160eD06FB">
-                                    Link
-                                  </option>
-                                )}
-                              </select>
                             </div>
+                            {(txType == "2" || txType == "3") && (
+                              <>
+                                <p className="text-md text-gray-600 mt-3">
+                                  Token Address
+                                </p>
+                                <div className="flex w-full items-center">
+                                  <input
+                                    onChange={(e) =>
+                                      setTokenAddress(
+                                        e.target.value as `0x${string}`
+                                      )
+                                    }
+                                    placeholder="0x..."
+                                    className="px-4 mt-2 py-3 border border-gray-100 rounded-xl text-2xl w-3/4"
+                                  ></input>
+                                </div>
+                              </>
+                            )}
                           </div>
                           <div className="mt-7 mx-auto">
                             <button
-                              onClick={() => handleTokenTransfer()}
+                              onClick={() => {
+                                toast.promise(handleTransfer(), {
+                                  success: {
+                                    title: "Token Transfered",
+                                    description:
+                                      "Transaction has been successfully completed",
+                                  },
+                                  loading: {
+                                    title: "Transferring Funds",
+                                    description:
+                                      "Transaction is being processed",
+                                  },
+                                  error: {},
+                                });
+                              }}
                               className="px-6 mx-auto flex justify-center py-2 bg-blue-500 text-white text-xl rounded-xl font-semibold border hover:scale-105 hover:bg-white hover:border-blue-500 hover:text-blue-500 duration-200"
                             >
                               Transfer Funds
@@ -609,7 +791,21 @@ const Modal = () => {
                         <div className="mt-5 flex flex-col">
                           <div className="mx-auto">
                             <button
-                              onClick={() => handleAnnounce()}
+                              onClick={() => {
+                                toast.promise(handleAnnounce(), {
+                                  success: {
+                                    title: "Stealth Address Announced",
+                                    description:
+                                      "Stealth Address has been successfully announced",
+                                  },
+                                  loading: {
+                                    title: "Announcing Stealth Address",
+                                    description:
+                                      "Stealth Address is being announced",
+                                  },
+                                  error: {},
+                                });
+                              }}
                               className="px-6 mx-auto flex justify-center py-2 bg-blue-500 text-white text-xl rounded-xl font-semibold border hover:scale-105 hover:bg-white hover:border-blue-500 hover:text-blue-500 duration-200"
                             >
                               Announce Stealth Address
@@ -624,6 +820,26 @@ const Modal = () => {
                         </div>
                       ) : (
                         <div className="mt-10 flex flex-col justify-center mx-auto">
+                          <div className="mt-1 flex flex-col">
+                            <p className="text-lg text-center text-blue-600">
+                              Token Transfered successfully to the new stealth
+                              address. Share the txHash below
+                            </p>
+                          </div>
+                          <div className="mt-4 flex flex-col">
+                            <p className="text-md text-gray-600">
+                              Transaction hash
+                            </p>
+                            <a
+                              target="_blank"
+                              href={`${chain?.blockExplorers?.default.url}/tx/${transactionHash}`}
+                              className="text-lg mt-1 text-gray-600"
+                            >
+                              {/* {transactionHash.slice(0, 15)}....
+                              {transactionHash?.slice(-5)} */}
+                              {transactionHash}
+                            </a>
+                          </div>
                           <CheckCircleIcon className="text-3xl" color="green" />
                         </div>
                       )}
@@ -633,31 +849,75 @@ const Modal = () => {
               </TabPanel>
               <TabPanel>
                 <div className="flex flex-col px-6 py-2 bg-white rounded-xl w-full mt-6">
-                  <p className="font-mono text-md">Withdraw</p>
+                  {/* <p className="font-mono text-md">Transact from your</p> */}
                   <div className="mt-4 flex flex-col">
-                    <p className="text-md text-gray-600">Sending Funds from</p>
+                    <p className="text-md text-gray-600">
+                      Transact from Stealth Address
+                    </p>
                     <p className="text-sm mt-1.5 text-gray-600">
                       {stealthAddressData?.stealthAddress}
                     </p>
                   </div>
+
                   <div className="mt-5 flex flex-col">
-                    <p className="text-md text-gray-600">amount</p>
+                    <p className="text-md text-gray-600">Transaction Type</p>
+                    <RadioGroup
+                      value={txType}
+                      onChange={(e) => setTxType(e)}
+                      className="bg-white h-12 mt-1 rounded-xl px-1 py-0.5 text-md text-blue-500 font-semibold"
+                    >
+                      <HStack gap={6}>
+                        <Radio value="1"> ETH</Radio>
+                        <Radio value="2">Token</Radio>
+                        <Radio value="3"> NFT</Radio>
+                        <Radio value="4">Custom</Radio>
+                      </HStack>
+                    </RadioGroup>
+                  </div>
+
+                  <div className="mt-5 flex flex-col">
+                    <p className="text-md text-gray-600">Value / TokenId</p>
                     <div className="flex w-full items-center">
                       <input
-                        className="px-4 mt-2 py-3 border border-gray-100 rounded-xl text-2xl w-3/4"
+                        className="px-4 mt-2 py-3 mx-3 border border-gray-100 rounded-xl text-2xl w-1/4"
                         placeholder="0"
                         onChange={(e) => setAmount(e.target.value)}
                       ></input>
-                      <select className="mx-2 bg-white border border-blue-500 h-12 mt-1 rounded-xl px-1 py-0.5 text-md text-blue-500 font-semibold w-1/3">
-                        <option value="1">{chain?.name}</option>
-                        {chain?.id == 80001 && <option value="2">Link</option>}
-                      </select>
+                      {/* token address input text*/}
                     </div>
+                    {(txType == "2" || txType == "3") && (
+                      <>
+                        <p className="text-md text-gray-600 mt-3">
+                          Token Address
+                        </p>
+                        <div className="flex w-full items-center">
+                          <input
+                            onChange={(e) =>
+                              setTokenAddress(e.target.value as `0x${string}`)
+                            }
+                            placeholder="0x..."
+                            className="px-4 mt-2 py-3 border border-gray-100 rounded-xl text-2xl w-3/4"
+                          ></input>
+                        </div>
+                      </>
+                    )}
+                    {txType == "4" && (
+                      <>
+                        <p className="text-md text-gray-600 mt-3">calldata</p>
+                        <div className="flex w-full items-center">
+                          <input
+                            onChange={(e) =>
+                              setCalldata(e.target.value as `0x${string}`)
+                            }
+                            placeholder="0x..."
+                            className="px-4 mt-2 py-3 border border-gray-100 rounded-xl text-2xl w-3/4"
+                          ></input>
+                        </div>
+                      </>
+                    )}
                   </div>
                   <div className="mt-5 flex flex-col">
-                    <p className="text-md text-gray-600">
-                      address of receiving wallet
-                    </p>
+                    <p className="text-md text-gray-600">To</p>
                     <input
                       // @ts-ignore
                       onChange={(e) => setReceieverAddress(e.target.value)}
@@ -675,18 +935,25 @@ const Modal = () => {
                       {transactionHash}
                     </a>
                   </div>
-                  <div className="mt-7 mx-auto">
+                  <div className="mt-7 mx-auto flex flex-col">
                     <button
-                      onClick={() => handleWithdraw()}
-                      className="px-6 py-2 bg-blue-500 text-white text-xl rounded-xl font-semibold border hover:scale-105 hover:bg-white hover:border-blue-500 hover:text-blue-500 duration-200"
+                      onClick={() => handleSponsoredTransaction()}
+                      disabled={stealthCode ? false : true}
+                      className={`px-6 py-2 w-full mx-auto bg-blue-500 text-white text-xl rounded-xl font-semibold border ${
+                        stealthCode
+                          ? "hover:scale-105 hover:bg-white hover:border-blue-500 hover:text-blue-500 duration-200"
+                          : "bg-gray-500"
+                      }`}
                     >
-                      Withdraw
+                      Transact
                     </button>
+                    {!stealthCode && <p>Account not upgraded</p>}
                   </div>
                   <div className="mt-3 flex justify-center text-center mx-auto mb-3">
                     <p className="text-sm text-gray-500 w-[300px] text-center">
-                      Amount will be withdrawn from Stealth and deposited into
-                      the provided wallet addrress
+                      Assets will be withdrawn from Stealth and deposited into
+                      the provided wallet addrress. Transactions are sent via
+                      pimlico paymaster to your Kernel Smart account
                     </p>
                   </div>
                 </div>
@@ -695,17 +962,23 @@ const Modal = () => {
                 <div className="flex flex-col w-[460px] px-6 py-2 bg-white rounded-xl mt-6">
                   <div className="flex w-full justify-between">
                     <p className="text-md text-gray-600">Stealth Addresses</p>
-                    <RepeatIcon
-                      className=" cursor-pointer text-xl"
-                      onClick={() => handleScan()}
-                    />
+                    <div className="flex">
+                      <p className="mr-2 text-xl">Scan</p>
+                      <RepeatIcon
+                        className=" cursor-pointer text-2xl"
+                        onClick={() => {
+                          handleScan();
+                        }}
+                      />
+                    </div>
                   </div>
                   <div className="mt-7 flex flex-col">
-                    {announcements &&
-                      announcements.map((data) => {
-                        return (
-                          <ul key={data.stealthAddress}>
+                    <ul>
+                      {announcements &&
+                        announcements.map((data) => {
+                          return (
                             <li
+                              key={data.stealthAddress}
                               className={`${
                                 chooseStealthAddress &&
                                 "border-blue-500 cursor-pointer"
@@ -718,42 +991,92 @@ const Modal = () => {
                                   ephemeralPublicKey: data.ephemeralPubKey,
                                   viewTag: data.viewTag,
                                 });
+                                checkStealthAddress(data.stealthAddress);
                               }}
                             >
                               {data.stealthAddress}
                             </li>
-                          </ul>
-                        );
-                      })}
+                          );
+                        })}
+                    </ul>
                   </div>
                   <div className="flex flex-col justify-center mx-auto mt-6 w-full">
                     {spendingKey ? (
-                      <button
-                        onClick={() => {
-                          handleSwitchToTab(1);
-                          setTransactionHash("");
-                        }}
-                        className="px-6 py-2 w-2/3 mx-auto bg-blue-500 text-white text-xl rounded-xl font-semibold border hover:scale-105 hover:bg-white hover:border-blue-500 hover:text-blue-500 duration-200"
-                      >
-                        Withdraw
-                      </button>
+                      <>
+                        <button
+                          onClick={() => {
+                            if (stealthCode) {
+                              handleSwitchToTab(1);
+                              setTransactionHash("");
+                            } else {
+                              toast({
+                                title: "Error",
+                                // @ts-ignore
+                                description: `Stealth Address not upgraded`,
+                                status: "error",
+                                duration: 5000,
+                                isClosable: true,
+                              });
+                            }
+                          }}
+                          className="px-6 py-2 w-2/3 mx-auto bg-blue-500 text-white text-xl rounded-xl font-semibold border hover:scale-105 hover:bg-white hover:border-blue-500 hover:text-blue-500 duration-200"
+                        >
+                          Transact
+                        </button>
+                        <button
+                          onClick={() => {
+                            handleRevealStealthKey();
+                            onOpen();
+                          }}
+                          className="px-6 mt-6 py-2 w-2/3 mx-auto bg-blue-500 text-white text-xl rounded-xl font-semibold border hover:scale-105 hover:bg-white hover:border-blue-500 hover:text-blue-500 duration-200"
+                        >
+                          Reveal key
+                        </button>
+                        {!stealthCode && (
+                          <button
+                            onClick={() => {
+                              toast.promise(handleAuthorizeUpgrade(), {
+                                success: {
+                                  title: "Upgrade Authorized",
+                                  description:
+                                    "Upgrade has been successfully authorized",
+                                },
+                                loading: {
+                                  title: "Authorizing Upgrade",
+                                  description: "Upgrade is being authorized",
+                                },
+                                error: {},
+                              });
+                            }}
+                            className="px-6 mt-6 py-2 w-2/3 mx-auto bg-blue-500 text-white text-xl rounded-xl font-semibold border hover:scale-105 hover:bg-white hover:border-blue-500 hover:text-blue-500 duration-200"
+                          >
+                            Authorize Upgrade
+                          </button>
+                        )}
+                      </>
                     ) : (
                       <button
-                        onClick={() => signAndGenerateKey()}
+                        onClick={() => {
+                          toast.promise(signAndGenerateKey(), {
+                            success: {
+                              title: "Keys generated",
+                              description:
+                                "App-specific keys have been successfully generated",
+                            },
+                            loading: {
+                              title: "Generating Keys",
+                              description:
+                                "Keys are being generated. Please sign the message in your wallet",
+                            },
+                            error: {},
+                          });
+                        }}
                         className="px-6 py-2 w-2/3 mx-auto bg-blue-500 text-white text-xl rounded-xl font-semibold border hover:scale-105 hover:bg-white hover:border-blue-500 hover:text-blue-500 duration-200"
                       >
                         Login
                       </button>
                     )}
-                    <button
-                      onClick={() => {
-                        handleRevealStealthKey();
-                        onOpen();
-                      }}
-                      className="px-6 mt-6 py-2 w-2/3 mx-auto bg-blue-500 text-white text-xl rounded-xl font-semibold border hover:scale-105 hover:bg-white hover:border-blue-500 hover:text-blue-500 duration-200"
-                    >
-                      Reveal
-                    </button>
+
                     <AlertDialog
                       // @ts-ignore
                       leastDestructiveRef={cancelRef}
@@ -786,7 +1109,5 @@ const Modal = () => {
     </div>
   );
 };
-// import dynamic from "next/dynamic";
 
 export default Modal;
-// export default dynamic(() => Promise.resolve(Modal), { ssr: false });

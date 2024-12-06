@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { useState } from "react";
 import { useAccount, useConfig, usePublicClient, useWalletClient } from "wagmi";
@@ -17,10 +17,10 @@ import {
 } from "@chakra-ui/react";
 
 import { getStealthMetaAddress } from "@/utils/stealthMethods";
-import { registerKeys } from "@/utils/contractMethods";
+import { getStealthMetaAddressOf, registerKeys } from "@/utils/contractMethods";
 
 const Navbar = () => {
-  const { address: account } = useAccount();
+  const { address } = useAccount();
   const { data: walletClient } = useWalletClient();
   const config = useConfig();
 
@@ -31,13 +31,34 @@ const Navbar = () => {
 
   const { isOpen, onOpen, onClose } = useDisclosure();
 
+  useEffect(() => {
+    if (address) {
+      checkRegistered(address);
+    }
+  }, [address]);
+
+  const checkRegistered = async (address: `0x${string}`) => {
+    try {
+      const stealthMetaAddress = await getStealthMetaAddressOf(config, {
+        receiverAddress: address,
+        schemeId: 0,
+      });
+
+      if (stealthMetaAddress) {
+        setStealthMetaAddress(stealthMetaAddress);
+      }
+    } catch (error) {
+      console.log(error);
+    }
+  };
+
   const signAndGenerateKey = async () => {
     try {
       if (!walletClient) {
         return;
       }
       const signature = await walletClient.signMessage({
-        account,
+        account: address,
         message: `Sign this message to get access to your app-specific keys. \n \nOnly Sign this Message while using the trusted app`,
       });
       console.log(signature);
@@ -96,12 +117,17 @@ const Navbar = () => {
     <div className="w-screen bg-gradient-to-r from-white via-blue-100 to-rose-200">
       <div className="flex mt-4 justify-between mx-6">
         <div className="">
-          <p className="font-semibold text-2xl">CrypticCloak</p>
+          <p className="font-semibold text-2xl">Stealth + EIP7702</p>
         </div>
         <div className="flex">
           <button
             onClick={() => signAndGenerateKey()}
-            className="bg-white mx-3 border border-blue-500 rounded-xl px-6 py-1 text-lg text-blue-500 font-semibold"
+            disabled={stealthMetaAddress ? true : false}
+            className={`px-6 mx-3 flex justify-center py-2 bg-blue-500 text-white text-xl rounded-xl font-semibold border ${
+              stealthMetaAddress
+                ? "bg-gray-500"
+                : "hover:scale-105 hover:bg-white hover:border-blue-500 hover:text-blue-500 duration-200"
+            }`}
           >
             Register
           </button>

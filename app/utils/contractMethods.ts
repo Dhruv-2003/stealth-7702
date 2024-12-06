@@ -108,11 +108,19 @@ export const announceStealthAddress = async (
 export const retrieveAnnouncements = async (config: Config) => {
   const publicClient = getPublicClient(config);
 
+  const blockNumber = await publicClient?.getBlockNumber();
+  if (!blockNumber) {
+    throw new Error("Failed to get block number");
+  }
+
   const logs = await publicClient?.getContractEvents({
     address: ERC5564AnnouncerAddress,
     abi: erc5564AnnouncerAbi,
-    eventName: "Announcement",
+    fromBlock: blockNumber - BigInt(100000),
+    toBlock: blockNumber,
   });
+
+  console.log(ERC5564AnnouncerAddress);
 
   return logs;
 };

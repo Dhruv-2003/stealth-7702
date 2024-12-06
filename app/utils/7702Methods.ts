@@ -14,8 +14,11 @@ import { Config } from "wagmi";
 import { getPublicClient } from "wagmi/actions";
 import { entryPoint07Address } from "viem/account-abstraction";
 import dotenv from "dotenv";
+dotenv.config({
+  path: "./.env.local",
+});
 
-dotenv.config();
+const PIMLICO_API_KEY = process.env.NEXT_PUBLIC_PIMLICO_API_KEY;
 
 export const authorizeSmartAccountUpgrade = async (
   config: Config,
@@ -52,11 +55,6 @@ export const authorizeSmartAccountUpgrade = async (
 
   return txHash;
 };
-
-const PIMLICO_API_KEY = process.env.PIMLICO_API_KEY;
-if (!PIMLICO_API_KEY) {
-  throw new Error("PIMLICO_API_KEY is required");
-}
 
 export const performSponsoredTransaction = async (
   config: Config,

@@ -1,7 +1,95 @@
 import { Config } from "wagmi";
-import { erc20Abi, parseEther, parseUnits, erc721Abi } from "viem";
+import {
+  erc20Abi,
+  parseEther,
+  parseUnits,
+  erc721Abi,
+  zeroHash,
+  encodeFunctionData,
+  PublicClient,
+} from "viem";
 import { getAccount, getPublicClient, getWalletClient } from "wagmi/actions";
 // import { ethers } from "ethers";
+
+export async function prepareTransaction({
+  tokenAddress,
+  fromAddress,
+  publicClient,
+  receiverAddress,
+  amount,
+  txType,
+  calldata,
+}: {
+  tokenAddress?: `0x${string}`;
+  fromAddress?: `0x${string}`;
+  publicClient: PublicClient;
+  receiverAddress: `0x${string}`;
+  amount: string;
+  txType: string;
+  calldata?: `0x${string}`;
+}) {
+  let tx:
+    | {
+        to: `0x${string}`;
+        data: `0x${string}`;
+        value: bigint;
+      }
+    | undefined;
+
+  if (!receiverAddress || !amount) {
+    console.log("No Receiver Address or Amount Found");
+    return;
+  }
+
+  if (txType == "1") {
+    tx = {
+      to: receiverAddress as `0x${string}`,
+      value: parseEther(amount),
+      data: zeroHash,
+    };
+  } else if (txType == "2" && tokenAddress) {
+    const tokenDecimals = await publicClient?.readContract({
+      address: tokenAddress,
+      abi: erc20Abi,
+      functionName: "decimals",
+    });
+
+    const data = encodeFunctionData({
+      abi: erc20Abi,
+      functionName: "transfer",
+      args: [receiverAddress, parseUnits(amount, tokenDecimals)],
+    });
+
+    tx = {
+      to: tokenAddress,
+      value: parseEther(amount),
+      data: data,
+    };
+  } else if (txType == "3" && tokenAddress && fromAddress) {
+    const data = encodeFunctionData({
+      abi: erc721Abi,
+      functionName: "transferFrom",
+      args: [fromAddress, receiverAddress, BigInt(amount)],
+    });
+
+    tx = {
+      to: tokenAddress,
+      value: parseEther(amount),
+      data: data,
+    };
+  } else if (txType == "4" && calldata) {
+    tx = {
+      to: receiverAddress as `0x${string}`,
+      value: parseEther(amount),
+      data: calldata as `0x${string}`,
+    };
+  } else {
+    console.log("Invalid Transaction Type");
+    return;
+  }
+
+  return tx;
+}
 
 export async function transferERC20(
   config: Config,
