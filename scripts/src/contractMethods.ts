@@ -1,27 +1,35 @@
-import { erc5564AnnouncerAbi } from "@/abi/erc5564Announcer";
-import { erc6538RegistryAbi } from "@/abi/erc6538Registry";
+import { erc5564AnnouncerAbi } from "../abi/erc5564Announcer";
+import { erc6538RegistryAbi } from "../abi/erc6538Registry";
 import {
   ERC5564AnnouncerAddress,
-  ERC6538RegisteryAddress,
-} from "@/constants/address";
-import { parseAbiItem, toHex, zeroHash } from "viem";
-import { Config } from "wagmi";
-import { getPublicClient, getWalletClient } from "wagmi/actions";
+  ERC6638RegisteryAddress,
+} from "../constants/address";
+import {
+  parseAbiItem,
+  toHex,
+  zeroHash,
+  type PublicClient,
+  type WalletClient,
+} from "viem";
 
 type RegisterKeysParams = {
   schemeId: number;
   stealthMetaAddress: `0x${string}`;
 };
 
+type Config = {
+  publicClient: PublicClient;
+  walletClient: WalletClient;
+};
+
 export const registerKeys = async (
   config: Config,
   params: RegisterKeysParams
 ) => {
-  const publicClient = getPublicClient(config);
-  const walletClient = await getWalletClient(config);
+  const { publicClient, walletClient } = config;
 
   const data = await publicClient?.simulateContract({
-    address: ERC6538RegisteryAddress,
+    address: ERC6638RegisteryAddress,
     abi: erc6538RegistryAbi,
     functionName: "registerKeys",
     args: [BigInt(params.schemeId), params.stealthMetaAddress],
@@ -29,6 +37,10 @@ export const registerKeys = async (
 
   if (!data) {
     throw new Error("Failed to simulate contract");
+  }
+
+  if (!walletClient.account) {
+    throw new Error("Wallet client does not have an account");
   }
 
   const txHash = await walletClient.writeContract(data?.request);
@@ -49,10 +61,10 @@ export const getStealthMetaAddressOf = async (
   config: Config,
   params: GetStealthMetaAddressOfParams
 ) => {
-  const publicClient = getPublicClient(config);
+  const { publicClient } = config;
 
   const data = await publicClient?.readContract({
-    address: ERC6538RegisteryAddress,
+    address: ERC6638RegisteryAddress,
     abi: erc6538RegistryAbi,
     functionName: "stealthMetaAddressOf",
     args: [params.receiverAddress, BigInt(params.schemeId)],
@@ -76,8 +88,7 @@ export const announceStealthAddress = async (
   config: Config,
   params: RegisterKeysOnBehalfParams
 ) => {
-  const publicClient = getPublicClient(config);
-  const walletClient = await getWalletClient(config);
+  const { publicClient, walletClient } = config;
 
   const data = await publicClient?.simulateContract({
     address: ERC5564AnnouncerAddress,
@@ -105,7 +116,7 @@ export const announceStealthAddress = async (
 };
 
 export const retrieveAnnouncements = async (config: Config) => {
-  const publicClient = getPublicClient(config);
+  const { publicClient } = config;
 
   const blockNumber = await publicClient?.getBlockNumber();
   if (!blockNumber) {

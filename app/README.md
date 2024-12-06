@@ -1,40 +1,63 @@
-This is a [Next.js](https://nextjs.org/) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
+# Stealth Payments Frontend
 
-## Getting Started
+This is a **Next.js-based dApp** for interacting with stealth addresses using app-specific keys. It securely processes stealth transactions through a **client-side WASM module** for improved performance and security. The code for the stealth module can be found [here](https://github.com/Dhruv-2003/erc5564-stealth)
 
-First, run the development server:
+---
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+## **Receiver Instructions**
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+1. **Register:**
 
-You can start editing the page by modifying `pages/index.tsx`. The page auto-updates as you edit the file.
+   - Navigate to the dashboard and register yourself.
+   - This adds your information to the ERC-6638 registry per spec.
 
-[API routes](https://nextjs.org/docs/api-routes/introduction) can be accessed on [http://localhost:3000/api/hello](http://localhost:3000/api/hello). This endpoint can be edited in `pages/api/hello.ts`.
+2. **Scan for Stealth Addresses:**
 
-The `pages/api` directory is mapped to `/api/*`. Files in this directory are treated as [API routes](https://nextjs.org/docs/api-routes/introduction) instead of React pages.
+   - Log in by signing a message.
+   - Go to the **Scan** tab and click **Scan** to fetch announcements and validate those linked to you.
 
-This project uses [`next/font`](https://nextjs.org/docs/basic-features/font-optimization) to automatically optimize and load Inter, a custom Google Font.
+3. **Manage Stealth Addresses:**
 
-## Learn More
+   - Select an address to interact with.
+   - Optionally, reveal and export the private key if needed.
 
-To learn more about Next.js, take a look at the following resources:
+4. **Upgrade to Kernel Smart Account:**
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+   - Authorize the upgrade. Note: Sponsorship for this comes from an internal wallet (mine—so no exploiting!).
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js/) - your feedback and contributions are welcome!
+5. **Transact:**
+   - Use the **Transact** option to open the transfer tab.
+   - Choose your transaction type, fill in details, and hit **Transfer**.
+   - Transactions are handled via the Pimlico Paymaster and submitted on-chain.
 
-## Deploy on Vercel
+---
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## **Sender Instructions**
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/deployment) for more details.
+1. **Transfer Funds:**
+   - Go to the **Transfer** tab and proceed as you would in a regular wallet.
+   - The app will handle the extra announcement transaction for ERC-5564 (this can be abstracted in future versions).
+
+---
+
+## **Running Locally**
+
+1. Clone the repository:
+   ```bash
+   git clone <repo_url>
+   ```
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+3. Start the development server:
+   ```bash
+   npm run dev
+   ```
+
+---
+
+**Note:**  
+This is a demo version, using **app-specific keys** for operations. Please do not use real funds or private keys.
+
+For questions or contributions, feel free to reach out!

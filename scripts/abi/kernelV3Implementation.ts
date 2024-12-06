@@ -1,4 +1,4 @@
-const abi = [
+const kernelV3ImplementationAbi = [
   {
     inputs: [
       {
@@ -1072,4 +1072,4 @@ const abi = [
   },
 ] as const;
 
-export default abi;
+export default kernelV3ImplementationAbi;

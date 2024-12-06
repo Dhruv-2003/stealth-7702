@@ -32,7 +32,7 @@ const getStealthAddress = async (
   | {
       schemeId: string;
       stealthAddress: `0x${string}`;
-      ephemeralPublicKey: string;
+      ephemeralPublicKey: `0x${string}`;
       viewTag: number;
     }
   | undefined
@@ -43,7 +43,7 @@ const getStealthAddress = async (
     const output = new_stealth_address(metaAddress) as {
       schemeId: string;
       stealthAddress: `0x${string}`;
-      ephemeralPublicKey: string;
+      ephemeralPublicKey: `0x${string}`;
       viewTag: number;
     };
 

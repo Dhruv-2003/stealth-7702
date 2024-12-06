@@ -304,9 +304,9 @@ const Modal = () => {
         stealthAddressData?.stealthAddress,
         stealthAddressData?.ephemeralPublicKey
       );
-      console.log(data);
+      // console.log(data);
       if (data) {
-        const formatted = data.slice(0, 66);
+        const formatted = data.slice(0, 66) as `0x${string}`;
         // @ts-ignore
         setStealthKey(formatted);
         return formatted;
@@ -444,6 +444,7 @@ const Modal = () => {
 
   const handleSponsoredTransaction = async () => {
     try {
+      const stealthKey = await handleRevealStealthKey();
       if (!stealthKey) {
         console.log("No Stealth Key Found");
         throw new Error("Stealth Key not found");
@@ -460,6 +461,12 @@ const Modal = () => {
         throw new Error("Invalid Inputs");
       }
 
+      toast({
+        title: "Processing Transaction",
+        description: "Transaction is being processed",
+        status: "loading",
+        isClosable: true,
+      });
       const tx = await prepareTransaction({
         publicClient: publicClient,
         tokenAddress: tokenAddress,
@@ -484,7 +491,17 @@ const Modal = () => {
         hash: txHash,
       });
       console.log(txReciept);
+
+      toast.closeAll();
+      toast({
+        title: "Transaction Sent",
+        description: "Transaction has been successfully completed",
+        status: "success",
+        duration: 5000,
+        isClosable: true,
+      });
     } catch (error) {
+      toast.closeAll();
       console.log(error);
       toast({
         title: "Error",
@@ -505,7 +522,12 @@ const Modal = () => {
             <div className="flex mx-auto px-2 w-[380px] py-1 bg-white rounded-xl">
               <TabList>
                 <Tab onClick={() => setSelectedIndex(0)}>Transfer</Tab>
-                <Tab onClick={() => setSelectedIndex(1)}>
+                <Tab
+                  onClick={() => {
+                    setTransactionHash("");
+                    setSelectedIndex(1);
+                  }}
+                >
                   Transact / Account
                 </Tab>
                 <Tab
@@ -937,7 +959,9 @@ const Modal = () => {
                   </div>
                   <div className="mt-7 mx-auto flex flex-col">
                     <button
-                      onClick={() => handleSponsoredTransaction()}
+                      onClick={() => {
+                        handleSponsoredTransaction();
+                      }}
                       disabled={stealthCode ? false : true}
                       className={`px-6 py-2 w-full mx-auto bg-blue-500 text-white text-xl rounded-xl font-semibold border ${
                         stealthCode
